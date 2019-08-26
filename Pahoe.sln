@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29123.89
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pahoe", "Pahoe\Pahoe.csproj", "{507FFE68-84F3-494E-A3DE-21E73D90563F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PahoeTest", "PahoeTest\PahoeTest.csproj", "{07FA8014-4F1A-48A2-BAC2-B3D884046583}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{507FFE68-84F3-494E-A3DE-21E73D90563F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{507FFE68-84F3-494E-A3DE-21E73D90563F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{507FFE68-84F3-494E-A3DE-21E73D90563F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{507FFE68-84F3-494E-A3DE-21E73D90563F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07FA8014-4F1A-48A2-BAC2-B3D884046583}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07FA8014-4F1A-48A2-BAC2-B3D884046583}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07FA8014-4F1A-48A2-BAC2-B3D884046583}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07FA8014-4F1A-48A2-BAC2-B3D884046583}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9D4F138C-50CA-4B08-BC53-9FC898F1B141}
+	EndGlobalSection
+EndGlobal
