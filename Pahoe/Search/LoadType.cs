@@ -1,15 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Pahoe.Search
+﻿namespace Pahoe.Search
 {
-    public enum LoadType
+    public enum LoadType : byte
     {
-        TrackLoaded,
-        PlaylistLoaded,
-        SearchResult,
-        NoMatches,
-        LoadFailed
+        TrackLoaded = 84,
+        PlaylistLoaded = 80,
+        SearchResult = 83,
+        NoMatches = 78,
+        LoadFailed = 76
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace Pahoe.Search
@@ -42,8 +41,6 @@ namespace Pahoe.Search
             }
             while (true);
 
-            //Console.WriteLine(Encoding.UTF8.GetString(data.Slice(0, bytesRead)));
-
             LoadType loadType = default;
             List<LavalinkTrack> tracks = new List<LavalinkTrack>();
             PlaylistInfo playlistInfo = new PlaylistInfo();
@@ -58,15 +55,7 @@ namespace Pahoe.Search
                     if (reader.ValueTextEquals("loadType"))
                     {
                         reader.Read();
-
-                        if (reader.ValueTextEquals("TRACK_LOADED"))
-                            loadType = LoadType.TrackLoaded;
-                        else if (reader.ValueTextEquals("PLAYLIST_LOADED"))
-                            loadType = LoadType.PlaylistLoaded;
-                        else if (reader.ValueTextEquals("SEARCH_RESULT"))
-                            loadType = LoadType.SearchResult;
-                        else
-                            loadType = LoadType.LoadFailed;
+                        loadType = (LoadType)reader.ValueSpan[0];
                     }
                     else if (reader.ValueTextEquals("playlistInfo"))
                     {
@@ -115,9 +104,11 @@ namespace Pahoe.Search
                                             {
                                                 static bool equals(ReadOnlySpan<byte> bytes, ReadOnlySpan<char> str)
                                                 {
-                                                    Span<byte> strBytes = stackalloc byte[str.Length];
-                                                    Encoding.ASCII.GetBytes(str, strBytes);
-                                                    return strBytes.SequenceEqual(bytes);
+                                                    for (int i = 0; i < bytes.Length; i++)
+                                                        if (bytes[i] != (byte)str[i])
+                                                            return false;
+
+                                                    return true;
                                                 }
 
                                                 ReadOnlySpan<byte> bytes = reader.ValueSpan;

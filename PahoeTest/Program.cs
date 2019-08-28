@@ -15,9 +15,9 @@ namespace PahoeTest
             DiscordSocketClient discord = new DiscordSocketClient();
             await discord.LoginAsync(TokenType.Bot, "token");
 
-            LavalinkClient pahoe = new LavalinkClient(discord, new PahoeConfiguration
+            LavalinkClient pahoe = new LavalinkClient(discord, new LavalinkConfiguration
             {
-                Password = "password"
+                Authorization = "password"
             });
 
             await discord.StartAsync();
@@ -25,7 +25,7 @@ namespace PahoeTest
             discord.Ready += async () =>
             {
                 await pahoe.StartAsync();
-                SearchResult result = await pahoe.SearchAsync("ytsearch:test");
+                SearchResult result = await pahoe.SearchYouTubeAsync("kfchvCyHmsc");
 
                 IVoiceChannel vc = discord.GetChannel(416711632702537738) as IVoiceChannel;
                 LavalinkPlayer player = await pahoe.ConnectAsync(vc);

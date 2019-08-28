@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using Discord.WebSocket;
 
-namespace Pahoe.Payloads.Outgoing
+namespace Pahoe.Payloads
 {
     internal static class VoiceServerUpdated
     {

@@ -1,17 +1,17 @@
 ﻿using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Pahoe.Payloads.Outgoing
+namespace Pahoe.Payloads
 {
-    internal static class Pause
+    internal static class Seek
     {
-        internal static ValueTask SendAsync(LavalinkPlayer player, bool pause)
+        internal static ValueTask SendAsync(LavalinkPlayer player, uint positionMs)
         {
             using PayloadWriter payloadWriter = new PayloadWriter(player.Client.WebSocket);
             Utf8JsonWriter writer = payloadWriter.Writer;
 
-            payloadWriter.WriteStartPayload("pause", player.GuildIdStr);
-            writer.WriteBoolean("pause", pause);
+            payloadWriter.WriteStartPayload("seek", player.GuildIdStr);
+            writer.WriteNumber("position", positionMs);
 
             return payloadWriter.SendAsync();
         }

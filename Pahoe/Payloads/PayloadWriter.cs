@@ -1,11 +1,11 @@
 ﻿using System;
-using System.Buffers;
 using System.IO;
-using System.Net.WebSockets;
+using System.Buffers;
 using System.Text.Json;
+using System.Net.WebSockets;
 using System.Threading.Tasks;
 
-namespace Pahoe.Payloads.Outgoing
+namespace Pahoe.Payloads
 {
     internal ref struct PayloadWriter
     {

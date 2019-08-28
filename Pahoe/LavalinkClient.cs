@@ -3,12 +3,13 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Net.WebSockets;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using Pahoe.Search;
-using Pahoe.Payloads.Outgoing;
+using Pahoe.Payloads;
 using Discord;
 using Discord.WebSocket;
 
@@ -17,27 +18,29 @@ namespace Pahoe
     public sealed class LavalinkClient
     {
         public bool IsReady { get; private set; }
+        public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> OnTrackEnded { get; set; }
 
         internal BaseSocketClient Discord { get; }
         internal ClientWebSocket WebSocket { get; } = new ClientWebSocket();
         internal ConcurrentDictionary<ulong, LavalinkPlayer> Players { get; } = new ConcurrentDictionary<ulong, LavalinkPlayer>();
 
-        private PahoeConfiguration Configuration { get; }
+        private LavalinkConfiguration Configuration { get; }
         private HttpClient HttpClient { get; } = new HttpClient();
         private CancellationTokenSource CancellationSource { get; } = new CancellationTokenSource();
         private CancellationToken Token { get; }
-        private string SearchEndpoint { get; set; }
+        private string SearchEndpoint { get; }
 
-        private LavalinkClient(BaseSocketClient discordClient, PahoeConfiguration configuration)
+        private LavalinkClient(BaseSocketClient discordClient, LavalinkConfiguration configuration)
         {
             Discord = discordClient;
             Configuration = configuration;
 
             Token = CancellationSource.Token;
+            SearchEndpoint = string.Format("http://{0}:{1}/loadtracks?identifier=", Configuration.Address, Configuration.Port);
         }
 
-        public LavalinkClient(DiscordSocketClient discordClient, PahoeConfiguration configuration) : this(discordClient as BaseSocketClient, configuration) { }
-        public LavalinkClient(DiscordShardedClient discordShardedClient, PahoeConfiguration configuration) : this(discordShardedClient as BaseSocketClient, configuration) { }
+        public LavalinkClient(DiscordSocketClient discordClient, LavalinkConfiguration configuration) : this(discordClient as BaseSocketClient, configuration) { }
+        public LavalinkClient(DiscordShardedClient discordShardedClient, LavalinkConfiguration configuration) : this(discordShardedClient as BaseSocketClient, configuration) { }
 
         public async Task StartAsync()
         {
@@ -45,12 +48,11 @@ namespace Pahoe
                 throw new InvalidOperationException("Discord client must be logged in and ready.");
 
             ClientWebSocketOptions options = WebSocket.Options;
-            options.SetRequestHeader("Authorization", Configuration.Password);
+            options.SetRequestHeader("Authorization", Configuration.Authorization);
             options.SetRequestHeader("User-Id", Discord.CurrentUser.Id.ToString());
             options.SetRequestHeader("Num-Shards", Configuration.Shards.ToString());
 
-            HttpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Configuration.Password);
-            SearchEndpoint = string.Format("http://{0}:{1}/loadtracks?identifier=", Configuration.Address, Configuration.Port);
+            HttpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Configuration.Authorization);
 
             Discord.VoiceServerUpdated += VoiceServerUpdatedAsync;
 
@@ -60,17 +62,37 @@ namespace Pahoe
             IsReady = true;
         }
 
+        public async Task StopAsync()
+        {
+            await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default);
+            CancellationSource.Cancel();
+            Discord.VoiceServerUpdated -= VoiceServerUpdatedAsync;
+
+            foreach (LavalinkPlayer player in Players.Values)
+                await player.DisconnectAsync();
+
+            WebSocket.Dispose();
+            HttpClient.Dispose();
+        }
+
         public async ValueTask<LavalinkPlayer> ConnectAsync(IVoiceChannel voiceChannel)
         {
             if (Players.TryGetValue(voiceChannel.GuildId, out LavalinkPlayer player))
                 return player;
 
-            _ = await voiceChannel.ConnectAsync(selfDeaf: Configuration.SelfDeaf, external: true);
 
             player = new LavalinkPlayer(this, voiceChannel);
             Players.TryAdd(voiceChannel.GuildId, player);
+
+            await voiceChannel.ConnectAsync(selfDeaf: Configuration.SelfDeaf, external: true);
             return player;
         }
+
+        public Task DisconnectAsync(LavalinkPlayer player) 
+            => player.DisconnectAsync();
+
+        public Task<SearchResult> SearchYouTubeAsync(string search)
+            => SearchAsync(string.Concat("ytsearch:", search));
 
         public async Task<SearchResult> SearchAsync(string search)
         {
@@ -109,10 +131,163 @@ namespace Pahoe
                 while (!result.EndOfMessage);
 
                 Memory<byte> data = buffer.Slice(0, bytesRead);
-                Console.WriteLine(Encoding.UTF8.GetString(data.Span));
 
                 // Parse received json...
+                await HandleIncomingMessageAsync(data.Span).ConfigureAwait(false);
             }
+        }
+
+        private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
+        {
+            if(OnTrackEnded != null)
+            {
+                Delegate[] delegates = OnTrackEnded.GetInvocationList();
+                for(int i = 0; i < delegates.Length; i++)
+                {
+                    try
+                    {
+                        await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>)delegates[i])(player, track, reason).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Log...?
+                    }
+                }
+            }
+        }
+
+        private Task HandleIncomingMessageAsync(Span<byte> data)
+        {
+            Utf8JsonReader opCodeReader = new Utf8JsonReader(data);
+            Utf8JsonReader reader = new Utf8JsonReader(data);
+            ReadOnlySpan<byte> op = default;
+
+            while (opCodeReader.Read())
+            {
+                if(opCodeReader.TokenType == JsonTokenType.PropertyName)
+                {
+                    if(opCodeReader.ValueTextEquals("op"))
+                    {
+                        opCodeReader.Skip();
+                        op = opCodeReader.ValueSpan;
+                        break;
+                    }
+                }
+            }
+
+            static bool equals(ReadOnlySpan<byte> bytes, ReadOnlySpan<char> str)
+            {
+                for (int i = 0; i < bytes.Length; i++)
+                    if (bytes[i] != (byte)str[i])
+                        return false;
+
+                return true;
+            }
+
+            if (equals(op, "playerUpdate"))
+            {
+                double position = 0;
+                ulong guildId = 0;
+
+                while (reader.Read() && (position == 0 || guildId == 0))
+                {
+                    if(reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        if (reader.ValueTextEquals("guildId"))
+                        {
+                            reader.Skip();
+                            Span<char> guildIdChars = stackalloc char[reader.ValueSpan.Length];
+                            Encoding.ASCII.GetChars(reader.ValueSpan, guildIdChars);
+                            ulong.TryParse(guildIdChars, out guildId);
+                        }
+                        else if (reader.ValueTextEquals("state"))
+                        {
+                            while (reader.Read())
+                            {
+                                if(reader.TokenType == JsonTokenType.PropertyName)
+                                {
+                                    if (reader.ValueTextEquals("position"))
+                                    {
+                                        reader.Skip();
+                                        position = reader.GetDouble();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Should always be true
+                if(Players.TryGetValue(guildId, out LavalinkPlayer player))
+                    player.Position = TimeSpan.FromMilliseconds(position);
+            }
+            else if(equals(op, "event"))
+            {
+                ReadOnlySpan<byte> type = default;
+                while (opCodeReader.Read())
+                {
+                    if(opCodeReader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        if (opCodeReader.ValueTextEquals("type"))
+                        {
+                            opCodeReader.Skip();
+                            type = opCodeReader.ValueSpan;
+                            break;
+                        }
+                    }
+                }
+
+                ReadOnlySpan<byte> trackHashSpan = default;
+                ReadOnlySpan<byte> errorSpan = default;
+                TrackEndReason endReason = default;
+                ulong thresholdMs = 0;
+                ulong guildId = 0;
+                int code = 0;
+                bool byRemote = false;
+
+                while (reader.Read())
+                {
+                    if(reader.TokenType == JsonTokenType.PropertyName)
+                    {
+
+                        ReadOnlySpan<byte> bytes = reader.ValueSpan;
+                        reader.Skip();
+
+                        if (equals(bytes, "track"))
+                            trackHashSpan = reader.ValueSpan;
+                        else if (equals(bytes, "reason"))
+                            endReason = (TrackEndReason)reader.ValueSpan[0];
+                        else if (equals(bytes, "error"))
+                            errorSpan = reader.ValueSpan;
+                        else if (equals(bytes, "thresholdMs"))
+                            thresholdMs = reader.GetUInt64();
+                        else if (equals(bytes, "code"))
+                            code = reader.GetInt32();
+                        else if (equals(bytes, "byRemote"))
+                            byRemote = reader.GetBoolean();
+                        else if (equals(bytes, "guildId"))
+                        {
+                            Span<char> guildIdChars = stackalloc char[reader.ValueSpan.Length];
+                            Encoding.ASCII.GetChars(reader.ValueSpan, guildIdChars);
+                            ulong.TryParse(guildIdChars, out guildId);
+                        }
+                    }
+                }
+
+                if(equals(type, "WebSocketClosedEvent"))
+                {
+
+                }
+                else if(Players.TryGetValue(guildId, out LavalinkPlayer player))
+                {
+                    LavalinkTrack track = LavalinkTrack.Decode(Encoding.UTF8.GetString(trackHashSpan));
+                    if (equals(type, "TrackEndEvent"))
+                        return TrackEndedAsync(player, track, endReason);
+                }
+            }
+
+            return Task.CompletedTask;
         }
     }
 }

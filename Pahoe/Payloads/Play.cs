@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Pahoe.Search;
 
-namespace Pahoe.Payloads.Outgoing
+namespace Pahoe.Payloads
 {
     internal static class Play
     {

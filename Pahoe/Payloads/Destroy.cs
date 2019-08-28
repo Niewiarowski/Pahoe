@@ -1,17 +1,16 @@
 ﻿using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Pahoe.Payloads.Outgoing
+namespace Pahoe.Payloads
 {
-    internal static class Volume
+    internal static class Destroy
     {
-        internal static ValueTask SendAsync(LavalinkPlayer player, ushort volume)
+        internal static ValueTask SendAsync(LavalinkPlayer player)
         {
             using PayloadWriter payloadWriter = new PayloadWriter(player.Client.WebSocket);
             Utf8JsonWriter writer = payloadWriter.Writer;
 
-            payloadWriter.WriteStartPayload("volume", player.GuildIdStr);
-            writer.WriteNumber("volume", volume);
+            payloadWriter.WriteStartPayload("destroy", player.GuildIdStr);
 
             return payloadWriter.SendAsync();
         }
