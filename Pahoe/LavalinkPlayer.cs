@@ -19,6 +19,8 @@ namespace Pahoe
 
         public ushort Volume { get; private set; } = 100;
 
+        public Memory<float> Bands { get; } = new float[15];
+
         internal LavalinkClient Client { get; }
         internal string GuildIdStr { get; }
         internal string SessionId { get; private set; }
@@ -65,6 +67,9 @@ namespace Pahoe
             Volume = volume;
             return Payloads.Volume.SendAsync(this, volume);
         }
+
+        public ValueTask UpdateBandsAsync()
+            => Equalizer.SendAsync(this);
 
         public async Task DisconnectAsync()
         {
