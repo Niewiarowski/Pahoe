@@ -2,14 +2,14 @@
 {
     public enum TrackEndReason : byte
     {
-        Cleanup = 67,
+        Cleanup = (byte) 'C',
 
-        Finished = 70,
+        Finished = (byte) 'F',
 
-        LoadFailed = 76,
+        LoadFailed = (byte) 'L',
 
-        Replaced = 82,
+        Replaced = (byte) 'R',
 
-        Stopped = 83,
+        Stopped = (byte) 'S'
     }
 }

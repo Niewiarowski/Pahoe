@@ -15,28 +15,45 @@ using Pahoe.Search;
 
 namespace Pahoe
 {
+    // TODO: IDisposable (_cts, _http, WebSocket)
+    // TODO: make the client stoppable and then resumable (_Cts)
     public sealed class LavalinkClient
     {
+        public string Address { get; }
+
+        public int Port { get; }
+
+        public string Authorization { get; }
+
+        public int Shards { get; }
+
+        public bool SelfDeaf { get; }
+
         public bool IsReady { get; private set; }
+
         public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> OnTrackEnded { get; set; }
 
-        internal BaseSocketClient Discord { get; }
-        internal ClientWebSocket WebSocket { get; } = new ClientWebSocket();
-        internal ConcurrentDictionary<ulong, LavalinkPlayer> Players { get; } = new ConcurrentDictionary<ulong, LavalinkPlayer>();
+        internal readonly BaseSocketClient Discord;
+        internal readonly ClientWebSocket WebSocket = new ClientWebSocket();
+        internal readonly ConcurrentDictionary<ulong, LavalinkPlayer> Players = new ConcurrentDictionary<ulong, LavalinkPlayer>();
 
-        private LavalinkConfiguration Configuration { get; }
-        private HttpClient HttpClient { get; } = new HttpClient();
-        private CancellationTokenSource CancellationSource { get; } = new CancellationTokenSource();
-        private CancellationToken Token { get; }
-        private string SearchEndpoint { get; }
+        private readonly string _connectionEndpoint;
+        private readonly string _searchEndpoint;
+        private readonly HttpClient _http = new HttpClient();
+        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
 
         private LavalinkClient(BaseSocketClient discordClient, LavalinkConfiguration configuration)
         {
             Discord = discordClient;
-            Configuration = configuration;
 
-            Token = CancellationSource.Token;
-            SearchEndpoint = string.Format("http://{0}:{1}/loadtracks?identifier=", Configuration.Address, Configuration.Port);
+            Address = configuration.Address;
+            Port = configuration.Port;
+            Authorization = configuration.Authorization;
+            Shards = configuration.Shards;
+            SelfDeaf = configuration.SelfDeaf;
+
+            _connectionEndpoint = string.Format("{0}:{1}", configuration.Address, configuration.Port);
+            _searchEndpoint = string.Format("http://{0}/loadtracks?identifier=", _connectionEndpoint);
         }
 
         public LavalinkClient(DiscordSocketClient discordClient, LavalinkConfiguration configuration) : this(discordClient as BaseSocketClient, configuration) { }
@@ -47,17 +64,17 @@ namespace Pahoe
             if (Discord.CurrentUser == null)
                 throw new InvalidOperationException("Discord client must be logged in and ready.");
 
-            ClientWebSocketOptions options = WebSocket.Options;
-            options.SetRequestHeader("Authorization", Configuration.Authorization);
+            var options = WebSocket.Options;
+            options.SetRequestHeader("Authorization", Authorization);
             options.SetRequestHeader("User-Id", Discord.CurrentUser.Id.ToString());
-            options.SetRequestHeader("Num-Shards", Configuration.Shards.ToString());
+            options.SetRequestHeader("Num-Shards", Shards.ToString());
 
-            HttpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Configuration.Authorization);
+            _http.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Authorization);
 
             Discord.VoiceServerUpdated += VoiceServerUpdatedAsync;
 
-            await WebSocket.ConnectAsync(new Uri(string.Format("ws://{0}:{1}/", Configuration.Address, Configuration.Port)), Token).ConfigureAwait(false);
-            _ = Task.Run(WebSocketReceiveAsync, Token);
+            await WebSocket.ConnectAsync(new Uri(string.Format("ws://{0}/", _connectionEndpoint)), _cts.Token).ConfigureAwait(false);
+            _ = Task.Run(WebSocketReceiveAsync, _cts.Token);
 
             IsReady = true;
         }
@@ -65,31 +82,34 @@ namespace Pahoe
         public async Task StopAsync()
         {
             await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default).ConfigureAwait(false);
-            CancellationSource.Cancel();
+            _cts.Cancel();
+            _cts.Dispose();
             Discord.VoiceServerUpdated -= VoiceServerUpdatedAsync;
 
-            foreach (LavalinkPlayer player in Players.Values)
+            foreach (var player in Players.Values)
                 await player.DisconnectAsync().ConfigureAwait(false);
 
             WebSocket.Dispose();
-            HttpClient.Dispose();
+            _http.Dispose();
         }
 
         public async ValueTask<LavalinkPlayer> ConnectAsync(IVoiceChannel voiceChannel)
         {
-            if (Players.TryGetValue(voiceChannel.GuildId, out LavalinkPlayer player))
+            if (Players.TryGetValue(voiceChannel.GuildId, out var player))
                 return player;
-
 
             player = new LavalinkPlayer(this, voiceChannel);
             Players.TryAdd(voiceChannel.GuildId, player);
 
-            await voiceChannel.ConnectAsync(selfDeaf: Configuration.SelfDeaf, external: true).ConfigureAwait(false);
+            await voiceChannel.ConnectAsync(selfDeaf: SelfDeaf, external: true).ConfigureAwait(false);
             return player;
         }
 
         public Task DisconnectAsync(LavalinkPlayer player)
             => player.DisconnectAsync();
+
+        public bool TryGetPlayer(ulong guildId, out LavalinkPlayer player)
+            => Players.TryGetValue(guildId, out player);
 
         public Task<SearchResult> SearchYouTubeAsync(string search)
             => SearchAsync(string.Concat("ytsearch:", search));
@@ -97,24 +117,31 @@ namespace Pahoe
         public async Task<SearchResult> SearchAsync(string search)
         {
             // Have to write a url encoder that uses Spans...
-            using Stream stream = await HttpClient.GetStreamAsync(string.Concat(SearchEndpoint, WebUtility.UrlEncode(search))).ConfigureAwait(false);
+            using Stream stream = await _http.GetStreamAsync(string.Concat(_searchEndpoint, WebUtility.UrlEncode(search))).ConfigureAwait(false);
             return SearchResult.FromStream(stream);
         }
 
-        private Task VoiceServerUpdatedAsync(SocketVoiceServer voiceServer) => VoiceServerUpdated.SendAsync(this, voiceServer).AsTask();
+        private Task VoiceServerUpdatedAsync(SocketVoiceServer voiceServer)
+        {
+            // Shouldn't ever be false.
+            if (!Players.TryGetValue(voiceServer.Guild.Id, out var player))
+                return Task.CompletedTask;
+
+            return VoiceServerUpdated.SendAsync(player, voiceServer).AsTask();
+        }
 
         private async Task WebSocketReceiveAsync()
         {
             Memory<byte> buffer = new byte[4096];
 
-            while (!Token.IsCancellationRequested)
+            while (!_cts.IsCancellationRequested)
             {
                 ValueWebSocketReceiveResult result;
                 int bytesRead = 0;
 
                 do
                 {
-                    result = await WebSocket.ReceiveAsync(buffer.Slice(bytesRead), Token).ConfigureAwait(false);
+                    result = await WebSocket.ReceiveAsync(buffer.Slice(bytesRead), _cts.Token).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         // Do something...
@@ -125,41 +152,40 @@ namespace Pahoe
                     {
                         // Skip over unusually large message?
                         bytesRead = 0;
-                        while (!(await WebSocket.ReceiveAsync(buffer, Token).ConfigureAwait(false)).EndOfMessage) ;
+                        while (!(await WebSocket.ReceiveAsync(buffer, _cts.Token).ConfigureAwait(false)).EndOfMessage) ;
                     }
                 }
                 while (!result.EndOfMessage);
 
-                Memory<byte> data = buffer.Slice(0, bytesRead);
-
                 // Parse received json...
+                var data = buffer.Slice(0, bytesRead);
                 await HandleIncomingMessageAsync(data.Span).ConfigureAwait(false);
             }
         }
 
         private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
         {
-            if (OnTrackEnded != null)
+            if (OnTrackEnded == null)
+                return;
+
+            Delegate[] delegates = OnTrackEnded.GetInvocationList();
+            for (int i = 0; i < delegates.Length; i++)
             {
-                Delegate[] delegates = OnTrackEnded.GetInvocationList();
-                for (int i = 0; i < delegates.Length; i++)
+                try
                 {
-                    try
-                    {
-                        await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Log...?
-                    }
+                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Log...?
                 }
             }
         }
 
         private Task HandleIncomingMessageAsync(Span<byte> data)
         {
-            Utf8JsonReader opCodeReader = new Utf8JsonReader(data);
-            Utf8JsonReader reader = new Utf8JsonReader(data);
+            var opCodeReader = new Utf8JsonReader(data);
+            var reader = new Utf8JsonReader(data);
             ReadOnlySpan<byte> op = default;
 
             while (opCodeReader.Read())
@@ -219,7 +245,7 @@ namespace Pahoe
                 }
 
                 // Should always be true
-                if (Players.TryGetValue(guildId, out LavalinkPlayer player))
+                if (Players.TryGetValue(guildId, out var player))
                     player.Position = TimeSpan.FromMilliseconds(position);
             }
             else if (equals(op, "event"))
@@ -250,7 +276,7 @@ namespace Pahoe
                 {
                     if (reader.TokenType == JsonTokenType.PropertyName)
                     {
-                        ReadOnlySpan<byte> bytes = reader.ValueSpan;
+                        var bytes = reader.ValueSpan;
                         reader.Skip();
 
                         if (equals(bytes, "track"))

@@ -7,7 +7,7 @@ using Pahoe.Search;
 
 namespace Pahoe
 {
-    public class LavalinkPlayer
+    public sealed class LavalinkPlayer
     {
         public IVoiceChannel VoiceChannel { get; }
 
@@ -21,9 +21,9 @@ namespace Pahoe
 
         public Memory<float> Bands { get; } = new float[15];
 
-        internal LavalinkClient Client { get; }
-        internal string GuildIdStr { get; }
-        internal string SessionId { get; private set; }
+        internal readonly LavalinkClient Client;
+        internal readonly string GuildIdStr;
+        internal string SessionId;
 
         internal LavalinkPlayer(LavalinkClient client, IVoiceChannel voiceChannel)
         {
@@ -80,7 +80,7 @@ namespace Pahoe
             await VoiceChannel.DisconnectAsync().ConfigureAwait(false);
         }
 
-        internal Task UserVoiceStateUpdated(SocketUser user, SocketVoiceState oldState, SocketVoiceState state)
+        private Task UserVoiceStateUpdated(SocketUser user, SocketVoiceState oldState, SocketVoiceState state)
         {
             if (Client.Discord.CurrentUser.Id == user.Id && state.VoiceChannel?.Id == VoiceChannel.Id)
                 SessionId = state.VoiceSessionId;

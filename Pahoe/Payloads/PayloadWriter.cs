@@ -1,57 +1,46 @@
 ﻿using System;
-using System.IO;
 using System.Buffers;
-using System.Text.Json;
+using System.IO;
 using System.Net.WebSockets;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Pahoe.Payloads
 {
     internal ref struct PayloadWriter
     {
-        public Utf8JsonWriter Writer { get; private set; }
+        public readonly Utf8JsonWriter Writer;
 
-        private ClientWebSocket _webSocket;
-        private MemoryStream _stream;
-        private byte[] _buffer;
+        private readonly LavalinkPlayer _player;
+        private readonly byte[] _buffer;
+        private readonly MemoryStream _stream;
 
-        internal PayloadWriter(ClientWebSocket webSocket, int bufferSize = 1024)
+        internal PayloadWriter(LavalinkPlayer player, int bufferSize = 1024)
         {
-            _webSocket = webSocket;
+            _player = player;
             _buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
             _stream = new MemoryStream(_buffer, 0, bufferSize);
             Writer = new Utf8JsonWriter(_stream);
         }
 
-        internal void WriteStartPayload(string op, string guildId)
+        internal void WriteStartPayload(string op)
         {
             Writer.WriteStartObject();
             Writer.WriteString("op", op);
-            Writer.WriteString("guildId", guildId);
+            Writer.WriteString("guildId", _player.GuildIdStr);
         }
 
         internal ValueTask SendAsync()
         {
             Writer.WriteEndObject();
             Writer.Flush();
-            return _webSocket.SendAsync(_buffer.AsMemory().Slice(0, (int) Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
+            return _player.Client.WebSocket.SendAsync(_buffer.AsMemory().Slice(0, (int) Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
         }
 
         public void Dispose()
         {
-            if (Writer != null)
-            {
-                Writer.Dispose();
-                Writer = null;
-            }
-
-            if (_stream != null)
-            {
-                _stream.Dispose();
-                _stream = null;
-            }
-
             ArrayPool<byte>.Shared.Return(_buffer);
+            Writer.Dispose();
         }
     }
 }

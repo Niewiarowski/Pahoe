@@ -1,6 +1,4 @@
-﻿using System;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 namespace Pahoe.Payloads
 {
@@ -8,14 +6,14 @@ namespace Pahoe.Payloads
     {
         internal static ValueTask SendAsync(LavalinkPlayer player)
         {
-            using PayloadWriter payloadWriter = new PayloadWriter(player.Client.WebSocket);
-            Utf8JsonWriter writer = payloadWriter.Writer;
+            using var payloadWriter = new PayloadWriter(player);
+            var writer = payloadWriter.Writer;
 
-            payloadWriter.WriteStartPayload("equalizer", player.GuildIdStr);
+            payloadWriter.WriteStartPayload("equalizer");
 
             writer.WritePropertyName("bands");
             writer.WriteStartArray();
-            Span<float> bandsSpan = player.Bands.Span;
+            var bandsSpan = player.Bands.Span;
             for (int i = 0; i < 15; i++)
             {
                 writer.WriteStartObject();

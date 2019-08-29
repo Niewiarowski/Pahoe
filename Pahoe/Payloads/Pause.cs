@@ -1,5 +1,4 @@
-﻿using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 namespace Pahoe.Payloads
 {
@@ -7,10 +6,11 @@ namespace Pahoe.Payloads
     {
         internal static ValueTask SendAsync(LavalinkPlayer player, bool pause)
         {
-            using PayloadWriter payloadWriter = new PayloadWriter(player.Client.WebSocket);
-            Utf8JsonWriter writer = payloadWriter.Writer;
+            using var payloadWriter = new PayloadWriter(player);
+            var writer = payloadWriter.Writer;
 
-            payloadWriter.WriteStartPayload("pause", player.GuildIdStr);
+            payloadWriter.WriteStartPayload("pause");
+
             writer.WriteBoolean("pause", pause);
 
             return payloadWriter.SendAsync();
