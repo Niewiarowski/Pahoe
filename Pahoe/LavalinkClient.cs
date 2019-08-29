@@ -1,17 +1,17 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
-using System.Text;
 using System.Net.Http;
+using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
-using System.Net.WebSockets;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
-using Pahoe.Search;
-using Pahoe.Payloads;
 using Discord;
 using Discord.WebSocket;
+using Pahoe.Payloads;
+using Pahoe.Search;
 
 namespace Pahoe
 {
@@ -64,12 +64,12 @@ namespace Pahoe
 
         public async Task StopAsync()
         {
-            await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default);
+            await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default).ConfigureAwait(false);
             CancellationSource.Cancel();
             Discord.VoiceServerUpdated -= VoiceServerUpdatedAsync;
 
             foreach (LavalinkPlayer player in Players.Values)
-                await player.DisconnectAsync();
+                await player.DisconnectAsync().ConfigureAwait(false);
 
             WebSocket.Dispose();
             HttpClient.Dispose();
@@ -84,11 +84,11 @@ namespace Pahoe
             player = new LavalinkPlayer(this, voiceChannel);
             Players.TryAdd(voiceChannel.GuildId, player);
 
-            await voiceChannel.ConnectAsync(selfDeaf: Configuration.SelfDeaf, external: true);
+            await voiceChannel.ConnectAsync(selfDeaf: Configuration.SelfDeaf, external: true).ConfigureAwait(false);
             return player;
         }
 
-        public Task DisconnectAsync(LavalinkPlayer player) 
+        public Task DisconnectAsync(LavalinkPlayer player)
             => player.DisconnectAsync();
 
         public Task<SearchResult> SearchYouTubeAsync(string search)
@@ -97,7 +97,7 @@ namespace Pahoe
         public async Task<SearchResult> SearchAsync(string search)
         {
             // Have to write a url encoder that uses Spans...
-            using Stream stream = await HttpClient.GetStreamAsync(string.Concat(SearchEndpoint, WebUtility.UrlEncode(search)));
+            using Stream stream = await HttpClient.GetStreamAsync(string.Concat(SearchEndpoint, WebUtility.UrlEncode(search))).ConfigureAwait(false);
             return SearchResult.FromStream(stream);
         }
 
@@ -125,7 +125,7 @@ namespace Pahoe
                     {
                         // Skip over unusually large message?
                         bytesRead = 0;
-                        while (!(await WebSocket.ReceiveAsync(buffer, Token)).EndOfMessage) ;
+                        while (!(await WebSocket.ReceiveAsync(buffer, Token).ConfigureAwait(false)).EndOfMessage) ;
                     }
                 }
                 while (!result.EndOfMessage);
@@ -139,14 +139,14 @@ namespace Pahoe
 
         private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
         {
-            if(OnTrackEnded != null)
+            if (OnTrackEnded != null)
             {
                 Delegate[] delegates = OnTrackEnded.GetInvocationList();
-                for(int i = 0; i < delegates.Length; i++)
+                for (int i = 0; i < delegates.Length; i++)
                 {
                     try
                     {
-                        await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>)delegates[i])(player, track, reason).ConfigureAwait(false);
+                        await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
                     }
                     catch
                     {
@@ -164,9 +164,9 @@ namespace Pahoe
 
             while (opCodeReader.Read())
             {
-                if(opCodeReader.TokenType == JsonTokenType.PropertyName)
+                if (opCodeReader.TokenType == JsonTokenType.PropertyName)
                 {
-                    if(opCodeReader.ValueTextEquals("op"))
+                    if (opCodeReader.ValueTextEquals("op"))
                     {
                         opCodeReader.Skip();
                         op = opCodeReader.ValueSpan;
@@ -178,7 +178,7 @@ namespace Pahoe
             static bool equals(ReadOnlySpan<byte> bytes, ReadOnlySpan<char> str)
             {
                 for (int i = 0; i < bytes.Length; i++)
-                    if (bytes[i] != (byte)str[i])
+                    if (bytes[i] != (byte) str[i])
                         return false;
 
                 return true;
@@ -191,7 +191,7 @@ namespace Pahoe
 
                 while (reader.Read() && (position == 0 || guildId == 0))
                 {
-                    if(reader.TokenType == JsonTokenType.PropertyName)
+                    if (reader.TokenType == JsonTokenType.PropertyName)
                     {
                         if (reader.ValueTextEquals("guildId"))
                         {
@@ -204,7 +204,7 @@ namespace Pahoe
                         {
                             while (reader.Read())
                             {
-                                if(reader.TokenType == JsonTokenType.PropertyName)
+                                if (reader.TokenType == JsonTokenType.PropertyName)
                                 {
                                     if (reader.ValueTextEquals("position"))
                                     {
@@ -219,15 +219,15 @@ namespace Pahoe
                 }
 
                 // Should always be true
-                if(Players.TryGetValue(guildId, out LavalinkPlayer player))
+                if (Players.TryGetValue(guildId, out LavalinkPlayer player))
                     player.Position = TimeSpan.FromMilliseconds(position);
             }
-            else if(equals(op, "event"))
+            else if (equals(op, "event"))
             {
                 ReadOnlySpan<byte> type = default;
                 while (opCodeReader.Read())
                 {
-                    if(opCodeReader.TokenType == JsonTokenType.PropertyName)
+                    if (opCodeReader.TokenType == JsonTokenType.PropertyName)
                     {
                         if (opCodeReader.ValueTextEquals("type"))
                         {
@@ -248,16 +248,15 @@ namespace Pahoe
 
                 while (reader.Read())
                 {
-                    if(reader.TokenType == JsonTokenType.PropertyName)
+                    if (reader.TokenType == JsonTokenType.PropertyName)
                     {
-
                         ReadOnlySpan<byte> bytes = reader.ValueSpan;
                         reader.Skip();
 
                         if (equals(bytes, "track"))
                             trackHashSpan = reader.ValueSpan;
                         else if (equals(bytes, "reason"))
-                            endReason = (TrackEndReason)reader.ValueSpan[0];
+                            endReason = (TrackEndReason) reader.ValueSpan[0];
                         else if (equals(bytes, "error"))
                             errorSpan = reader.ValueSpan;
                         else if (equals(bytes, "thresholdMs"))
@@ -275,13 +274,13 @@ namespace Pahoe
                     }
                 }
 
-                if(equals(type, "WebSocketClosedEvent"))
+                if (equals(type, "WebSocketClosedEvent"))
                 {
-
+                    // TODO
                 }
-                else if(Players.TryGetValue(guildId, out LavalinkPlayer player))
+                else if (Players.TryGetValue(guildId, out LavalinkPlayer player))
                 {
-                    LavalinkTrack track = LavalinkTrack.Decode(Encoding.UTF8.GetString(trackHashSpan));
+                    var track = LavalinkTrack.Decode(Encoding.UTF8.GetString(trackHashSpan));
                     if (equals(type, "TrackEndEvent"))
                         return TrackEndedAsync(player, track, endReason);
                 }

@@ -1,8 +1,15 @@
 ﻿namespace Pahoe.Search
 {
-    public struct PlaylistInfo
+    public sealed class PlaylistInfo
     {
-        public string Name { get; internal set; }
-        public int SelectedTrack { get; internal set; }
+        public string Name { get; }
+
+        public int SelectedTrack { get; }
+
+        internal PlaylistInfo(string name, int selectedTrack)
+        {
+            Name = name;
+            SelectedTrack = selectedTrack;
+        }
     }
 }

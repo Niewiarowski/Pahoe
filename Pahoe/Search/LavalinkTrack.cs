@@ -1,19 +1,29 @@
 ﻿using System;
-using System.Text;
 using System.Buffers.Text;
+using System.Text;
 
 namespace Pahoe.Search
 {
-    public struct LavalinkTrack
+    public sealed class LavalinkTrack
     {
         public string Hash { get; internal set; }
-        public string Identifier { get; internal set; }
-        public bool IsSeekable { get; internal set; }
-        public string Author { get; internal set; }
-        public TimeSpan Length { get; internal set; }
-        public bool IsStream { get; internal set; }
+
         public string Title { get; internal set; }
+
+        public string Author { get; internal set; }
+
+        public TimeSpan Length { get; internal set; }
+
+        public string Identifier { get; internal set; }
+
+        public bool IsStream { get; internal set; }
+
         public string Uri { get; internal set; }
+
+        public bool IsSeekable { get; internal set; }
+
+        internal LavalinkTrack()
+        { }
 
         public static LavalinkTrack Decode(string hash)
         {
@@ -37,5 +47,4 @@ namespace Pahoe.Search
             };
         }
     }
-
 }

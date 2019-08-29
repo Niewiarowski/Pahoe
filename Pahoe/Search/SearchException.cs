@@ -1,14 +1,17 @@
-﻿namespace Pahoe.Search
-{
-    public readonly struct SearchException
-    {
-        public readonly string Message;
-        public readonly string Severity;
+﻿using System;
 
-        internal SearchException(string message, string severity)
+namespace Pahoe.Search
+{
+    public sealed class SearchException : Exception
+    {
+        public string Severity { get; }
+
+        internal SearchException(string message, string severity) : base(message)
         {
-            Message = message;
             Severity = severity;
         }
+
+        public override string ToString()
+            => string.Format("{0}: {1}", Severity, Message);
     }
 }

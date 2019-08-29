@@ -3,7 +3,9 @@
     public enum PlayerState
     {
         Idle,
+
         Playing,
+
         Paused
     }
 }

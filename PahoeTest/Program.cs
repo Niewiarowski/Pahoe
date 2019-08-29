@@ -1,15 +1,14 @@
-﻿using Discord;
+﻿using System.Threading.Tasks;
+using Discord;
 using Discord.WebSocket;
 using Pahoe;
 using Pahoe.Search;
-using System;
-using System.Threading.Tasks;
 
 namespace PahoeTest
 {
-    class Program
+    internal static class Program
     {
-        static async Task Main(string[] args)
+        private static async Task Main(string[] args)
         {
             LavalinkTrack track = LavalinkTrack.Decode("QAAAjwIAK1Rlc3RpbmcgaWYgU2hhcmtzIENhbiBTbWVsbCBhIERyb3Agb2YgQmxvb2QACk1hcmsgUm9iZXIAAAAAAA5EWAALdWdSYzVqeDgweWcAAQAraHR0cHM6Ly93d3cueW91dHViZS5jb20vd2F0Y2g/dj11Z1JjNWp4ODB5ZwAHeW91dHViZQAAAAAAAAAA");
             DiscordSocketClient discord = new DiscordSocketClient();

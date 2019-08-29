@@ -10,16 +10,17 @@ namespace Pahoe.Payloads
     internal ref struct PayloadWriter
     {
         public Utf8JsonWriter Writer { get; private set; }
-        private ClientWebSocket WebSocket { get; }
-        private MemoryStream Stream { get; set;  }
-        private byte[] Buffer { get; }
+
+        private ClientWebSocket _webSocket;
+        private MemoryStream _stream;
+        private byte[] _buffer;
 
         internal PayloadWriter(ClientWebSocket webSocket, int bufferSize = 1024)
         {
-            WebSocket = webSocket;
-            Buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-            Stream = new MemoryStream(Buffer, 0, bufferSize);
-            Writer = new Utf8JsonWriter(Stream);
+            _webSocket = webSocket;
+            _buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            _stream = new MemoryStream(_buffer, 0, bufferSize);
+            Writer = new Utf8JsonWriter(_stream);
         }
 
         internal void WriteStartPayload(string op, string guildId)
@@ -33,24 +34,24 @@ namespace Pahoe.Payloads
         {
             Writer.WriteEndObject();
             Writer.Flush();
-            return WebSocket.SendAsync(Buffer.AsMemory().Slice(0, (int)Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
+            return _webSocket.SendAsync(_buffer.AsMemory().Slice(0, (int) Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
         }
 
         public void Dispose()
         {
-            if(Writer != null)
+            if (Writer != null)
             {
                 Writer.Dispose();
                 Writer = null;
             }
 
-            if(Stream != null)
+            if (_stream != null)
             {
-                Stream.Dispose();
-                Stream = null;
+                _stream.Dispose();
+                _stream = null;
             }
 
-            ArrayPool<byte>.Shared.Return(Buffer);
+            ArrayPool<byte>.Shared.Return(_buffer);
         }
     }
 }

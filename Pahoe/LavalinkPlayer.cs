@@ -2,17 +2,21 @@
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
-using Pahoe.Search;
 using Pahoe.Payloads;
+using Pahoe.Search;
 
 namespace Pahoe
 {
     public class LavalinkPlayer
     {
         public IVoiceChannel VoiceChannel { get; }
+
         public LavalinkTrack Track { get; private set; }
+
         public TimeSpan Position { get; internal set; }
+
         public PlayerState State { get; private set; } = PlayerState.Idle;
+
         public ushort Volume { get; private set; } = 100;
 
         internal LavalinkClient Client { get; }
@@ -54,7 +58,7 @@ namespace Pahoe
         }
 
         public ValueTask SeekAsync(TimeSpan position)
-            => Seek.SendAsync(this, (uint)position.TotalMilliseconds);
+            => Seek.SendAsync(this, (uint) position.TotalMilliseconds);
 
         public ValueTask SetVolumeAsync(ushort volume)
         {
@@ -67,8 +71,8 @@ namespace Pahoe
             Client.Discord.UserVoiceStateUpdated -= UserVoiceStateUpdated;
             Client.Players.TryRemove(VoiceChannel.GuildId, out _);
             State = PlayerState.Idle;
-            await Destroy.SendAsync(this);
-            await VoiceChannel.DisconnectAsync();
+            await Destroy.SendAsync(this).ConfigureAwait(false);
+            await VoiceChannel.DisconnectAsync().ConfigureAwait(false);
         }
 
         internal Task UserVoiceStateUpdated(SocketUser user, SocketVoiceState oldState, SocketVoiceState state)

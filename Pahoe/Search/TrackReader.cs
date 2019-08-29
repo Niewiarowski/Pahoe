@@ -1,27 +1,25 @@
 ﻿using System;
-using System.Text;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Pahoe.Search
 {
     internal ref struct TrackReader
     {
-        private readonly Span<byte> bytes;
-        private int position;
+        private readonly Span<byte> _bytes;
+        private int _position;
 
         public TrackReader(Span<byte> bytes)
         {
-            this.bytes = bytes;
-            position = 0;
+            _bytes = bytes;
+            _position = 0;
         }
 
         public string ReadString()
         {
             var length = Read<short>();
-            int newPosition = position + length;
-
-            string result = Encoding.UTF8.GetString(bytes.Slice(position, length));
-            position = newPosition;
+            var result = Encoding.UTF8.GetString(_bytes.Slice(_position, length));
+            _position += length;
 
             return result;
         }
@@ -30,18 +28,13 @@ namespace Pahoe.Search
         {
             T result = default;
             var bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref result, 1));
-            Read(bytes);
+            _bytes.Slice(_position, bytes.Length).CopyTo(bytes);
+            _position += bytes.Length;
+
             if (BitConverter.IsLittleEndian)
                 bytes.Reverse();
 
             return result;
-        }
-
-        private void Read(Span<byte> destination)
-        {
-            int newPosition = position + destination.Length;
-            bytes.Slice(position, destination.Length).CopyTo(destination);
-            position = newPosition;
         }
     }
 }

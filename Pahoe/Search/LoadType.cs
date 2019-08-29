@@ -2,10 +2,15 @@
 {
     public enum LoadType : byte
     {
-        TrackLoaded = 84,
-        PlaylistLoaded = 80,
-        SearchResult = 83,
-        NoMatches = 78,
-        LoadFailed = 76
+        TrackLoaded = (byte) 'T',
+
+        PlaylistLoaded = (byte) 'P',
+
+        SearchResult = (byte) 'S',
+
+        NoMatches = (byte) 'N',
+
+        // TODO: remove this considering SearchException is thrown on failures?
+        LoadFailed = (byte) 'L'
     }
 }
