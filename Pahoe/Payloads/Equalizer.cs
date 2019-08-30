@@ -14,12 +14,19 @@ namespace Pahoe.Payloads
             writer.WritePropertyName("bands");
             writer.WriteStartArray();
             var bandsSpan = player.Bands.Span;
+            var oldBandsSpan = player._bands.Span;
             for (int i = 0; i < 15; i++)
             {
-                writer.WriteStartObject();
-                writer.WriteNumber("band", i);
-                writer.WriteNumber("gain", bandsSpan[i]);
-                writer.WriteEndObject();
+                float gain = bandsSpan[i];
+                if (oldBandsSpan[i] != gain)
+                {
+                    oldBandsSpan[i] = gain;
+
+                    writer.WriteStartObject();
+                    writer.WriteNumber("band", i);
+                    writer.WriteNumber("gain", gain);
+                    writer.WriteEndObject();
+                }
             }
             writer.WriteEndArray();
 

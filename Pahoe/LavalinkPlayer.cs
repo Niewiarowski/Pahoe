@@ -19,6 +19,7 @@ namespace Pahoe
 
         public ushort Volume { get; private set; } = 100;
 
+        internal Memory<float> _bands { get; } = new float[15];
         public Memory<float> Bands { get; } = new float[15];
 
         internal readonly LavalinkClient Client;
