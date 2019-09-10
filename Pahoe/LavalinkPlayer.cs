@@ -9,7 +9,7 @@ namespace Pahoe
 {
     public sealed class LavalinkPlayer
     {
-        public IVoiceChannel VoiceChannel { get; }
+        public IVoiceChannel VoiceChannel { get; private set; }
 
         public LavalinkTrack Track { get; private set; }
 
@@ -23,6 +23,7 @@ namespace Pahoe
         public Memory<float> Bands { get; } = new float[15];
 
         internal readonly LavalinkClient Client;
+        internal readonly ulong GuildId;
         internal readonly string GuildIdStr;
         internal string SessionId;
 
@@ -30,6 +31,7 @@ namespace Pahoe
         {
             Client = client;
             VoiceChannel = voiceChannel;
+            GuildId = voiceChannel.GuildId;
             GuildIdStr = voiceChannel.GuildId.ToString();
 
             Client.Discord.UserVoiceStateUpdated += UserVoiceStateUpdated;
@@ -61,7 +63,7 @@ namespace Pahoe
         }
 
         public ValueTask SeekAsync(TimeSpan position)
-            => Seek.SendAsync(this, (uint) position.TotalMilliseconds);
+            => Seek.SendAsync(this, (uint)position.TotalMilliseconds);
 
         public ValueTask SetVolumeAsync(ushort volume)
         {
@@ -75,16 +77,24 @@ namespace Pahoe
         public async Task DisconnectAsync()
         {
             Client.Discord.UserVoiceStateUpdated -= UserVoiceStateUpdated;
-            Client.Players.TryRemove(VoiceChannel.GuildId, out _);
+            Client.Players.TryRemove(GuildId, out _);
             State = PlayerState.Idle;
             await Destroy.SendAsync(this).ConfigureAwait(false);
-            await VoiceChannel.DisconnectAsync().ConfigureAwait(false);
+
+            if (VoiceChannel != null)
+                await VoiceChannel.DisconnectAsync().ConfigureAwait(false);
         }
 
         private Task UserVoiceStateUpdated(SocketUser user, SocketVoiceState oldState, SocketVoiceState state)
         {
-            if (Client.Discord.CurrentUser.Id == user.Id && state.VoiceChannel?.Id == VoiceChannel.Id)
+            if (Client.Discord.CurrentUser.Id == user.Id)
+            {
+                VoiceChannel = state.VoiceChannel;
                 SessionId = state.VoiceSessionId;
+
+                if (VoiceChannel == null)
+                    return DisconnectAsync();
+            }
 
             return Task.CompletedTask;
         }
