@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Discord;
 using Discord.WebSocket;
 using Pahoe.Payloads;
 using Pahoe.Search;
@@ -93,13 +92,13 @@ namespace Pahoe
             _http.Dispose();
         }
 
-        public async ValueTask<LavalinkPlayer> ConnectAsync(IVoiceChannel voiceChannel)
+        public async ValueTask<LavalinkPlayer> ConnectAsync(SocketVoiceChannel voiceChannel)
         {
-            if (Players.TryGetValue(voiceChannel.GuildId, out var player))
+            if (Players.TryGetValue(voiceChannel.Guild.Id, out var player))
                 return player;
 
             player = new LavalinkPlayer(this, voiceChannel);
-            Players.TryAdd(voiceChannel.GuildId, player);
+            Players.TryAdd(voiceChannel.Guild.Id, player);
 
             await voiceChannel.ConnectAsync(selfDeaf: SelfDeaf, external: true).ConfigureAwait(false);
             return player;
