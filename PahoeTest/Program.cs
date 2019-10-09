@@ -26,7 +26,7 @@ namespace PahoeTest
                 await pahoe.StartAsync();
                 SearchResult result = await pahoe.SearchYouTubeAsync("kfchvCyHmsc");
 
-                IVoiceChannel vc = discord.GetChannel(416711632702537738) as IVoiceChannel;
+                SocketVoiceChannel vc = discord.GetChannel(416711632702537738) as SocketVoiceChannel;
                 LavalinkPlayer player = await pahoe.ConnectAsync(vc);
                 await player.PlayAsync(result.Tracks[0]);
 

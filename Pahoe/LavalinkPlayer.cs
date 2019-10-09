@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Discord;
 using Discord.WebSocket;
 using Pahoe.Payloads;
 using Pahoe.Search;
@@ -9,7 +8,7 @@ namespace Pahoe
 {
     public sealed class LavalinkPlayer
     {
-        public IVoiceChannel VoiceChannel { get; private set; }
+        public SocketVoiceChannel VoiceChannel { get; private set; }
 
         public LavalinkTrack Track { get; private set; }
 
@@ -19,20 +18,21 @@ namespace Pahoe
 
         public ushort Volume { get; private set; } = 100;
 
-        internal Memory<float> _bands { get; } = new float[15];
-        public Memory<float> Bands { get; } = new float[15];
+        public BandCollection Bands { get; }
 
         internal readonly LavalinkClient Client;
         internal readonly ulong GuildId;
         internal readonly string GuildIdStr;
         internal string SessionId;
 
-        internal LavalinkPlayer(LavalinkClient client, IVoiceChannel voiceChannel)
+        internal LavalinkPlayer(LavalinkClient client, SocketVoiceChannel voiceChannel)
         {
+            Bands = new BandCollection(this);
+
             Client = client;
             VoiceChannel = voiceChannel;
-            GuildId = voiceChannel.GuildId;
-            GuildIdStr = voiceChannel.GuildId.ToString();
+            GuildId = voiceChannel.Guild.Id;
+            GuildIdStr = voiceChannel.Guild.Id.ToString();
 
             Client.Discord.UserVoiceStateUpdated += UserVoiceStateUpdated;
         }
@@ -63,7 +63,7 @@ namespace Pahoe
         }
 
         public ValueTask SeekAsync(TimeSpan position)
-            => Seek.SendAsync(this, (uint)position.TotalMilliseconds);
+            => Seek.SendAsync(this, (uint) position.TotalMilliseconds);
 
         public ValueTask SetVolumeAsync(ushort volume)
         {
