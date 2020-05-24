@@ -32,8 +32,9 @@ namespace Pahoe
 
         public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> OnTrackEnded { get; set; }
 
+        internal ClientWebSocket WebSocket { get; private set; }
+
         internal readonly BaseSocketClient Discord;
-        internal readonly ClientWebSocket WebSocket = new ClientWebSocket();
         internal readonly ConcurrentDictionary<ulong, LavalinkPlayer> Players = new ConcurrentDictionary<ulong, LavalinkPlayer>();
 
         private readonly string _connectionEndpoint;
@@ -63,16 +64,12 @@ namespace Pahoe
             if (Discord.CurrentUser == null)
                 throw new InvalidOperationException("Discord client must be logged in and ready.");
 
-            var options = WebSocket.Options;
-            options.SetRequestHeader("Authorization", Authorization);
-            options.SetRequestHeader("User-Id", Discord.CurrentUser.Id.ToString());
-            options.SetRequestHeader("Num-Shards", Shards.ToString());
 
             _http.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Authorization);
 
             Discord.VoiceServerUpdated += VoiceServerUpdatedAsync;
 
-            await WebSocket.ConnectAsync(new Uri(string.Format("ws://{0}/", _connectionEndpoint)), _cts.Token).ConfigureAwait(false);
+            await ConnectWebSocketAsync();
             _ = Task.Run(WebSocketReceiveAsync, _cts.Token);
 
             IsReady = true;
@@ -95,7 +92,12 @@ namespace Pahoe
         public async ValueTask<LavalinkPlayer> ConnectAsync(SocketVoiceChannel voiceChannel)
         {
             if (Players.TryGetValue(voiceChannel.Guild.Id, out var player))
+            {
+                if (voiceChannel.Id != player.VoiceChannel.Id)
+                    await voiceChannel.ConnectAsync(selfDeaf: SelfDeaf, external: true).ConfigureAwait(false);
+
                 return player;
+            }
 
             player = new LavalinkPlayer(this, voiceChannel);
             Players.TryAdd(voiceChannel.Guild.Id, player);
@@ -129,37 +131,83 @@ namespace Pahoe
             return VoiceServerUpdated.SendAsync(player, voiceServer).AsTask();
         }
 
+        private async Task ConnectWebSocketAsync()
+        {
+            WebSocket = new ClientWebSocket();
+
+            var options = WebSocket.Options;
+            options.SetRequestHeader("Authorization", Authorization);
+            options.SetRequestHeader("User-Id", Discord.CurrentUser.Id.ToString());
+            options.SetRequestHeader("Num-Shards", Shards.ToString());
+            options.SetRequestHeader("Resume-Key", ConfigureResume.ResumeKey);
+
+            await WebSocket.ConnectAsync(new Uri(string.Format("ws://{0}/", _connectionEndpoint)), _cts.Token).ConfigureAwait(false);
+            await ConfigureResume.SendAsync(WebSocket);
+        }
+
         private async Task WebSocketReceiveAsync()
         {
             Memory<byte> buffer = new byte[4096];
 
             while (!_cts.IsCancellationRequested)
             {
-                ValueWebSocketReceiveResult result;
-                int bytesRead = 0;
-
-                do
+                try
                 {
-                    result = await WebSocket.ReceiveAsync(buffer.Slice(bytesRead), _cts.Token).ConfigureAwait(false);
-                    if (result.MessageType == WebSocketMessageType.Close)
-                    {
-                        // Do something...
-                    }
+                    ValueWebSocketReceiveResult result;
+                    int bytesRead = 0;
 
-                    bytesRead += result.Count;
-                    if (bytesRead == buffer.Length)
+                    do
                     {
-                        // Skip over unusually large message?
-                        bytesRead = 0;
-                        while (!(await WebSocket.ReceiveAsync(buffer, _cts.Token).ConfigureAwait(false)).EndOfMessage) ;
+                        result = await WebSocket.ReceiveAsync(buffer.Slice(bytesRead), _cts.Token).ConfigureAwait(false);
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            // Do something...
+                            await ConnectWebSocketAsync();
+                            continue;
+                        }
+
+                        bytesRead += result.Count;
+                        if (bytesRead == buffer.Length)
+                        {
+                            // Skip over unusually large message?
+                            bytesRead = 0;
+                            while (!(await WebSocket.ReceiveAsync(buffer, _cts.Token).ConfigureAwait(false)).EndOfMessage) ;
+                        }
+                    }
+                    while (!result.EndOfMessage);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        continue;
+
+                    // Parse received json...
+                    var data = buffer.Slice(0, bytesRead);
+                    await HandleIncomingMessageAsync(data.Span).ConfigureAwait(false);
+                }
+                catch (WebSocketException) 
+                {
+                    // Disconnected...
+
+                    foreach (var player in Players.Values)
+                        await player.DisconnectAsync().ConfigureAwait(false);
+
+                    while (!_cts.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            // In desperate need of some logging
+                            await Task.Delay(250);
+                            await ConnectWebSocketAsync();
+                            break;
+                        }
+                        catch { }
                     }
                 }
-                while (!result.EndOfMessage);
-
-                // Parse received json...
-                var data = buffer.Slice(0, bytesRead);
-                await HandleIncomingMessageAsync(data.Span).ConfigureAwait(false);
+                catch(Exception e)
+                {
+                    // Jesus christ we should log this!!!
+                }
             }
+
         }
 
         private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
@@ -172,7 +220,7 @@ namespace Pahoe
             {
                 try
                 {
-                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
+                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>)delegates[i])(player, track, reason).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -203,7 +251,7 @@ namespace Pahoe
             static bool equals(ReadOnlySpan<byte> bytes, ReadOnlySpan<char> str)
             {
                 for (int i = 0; i < bytes.Length; i++)
-                    if (bytes[i] != (byte) str[i])
+                    if (bytes[i] != (byte)str[i])
                         return false;
 
                 return true;
@@ -281,7 +329,7 @@ namespace Pahoe
                         if (equals(bytes, "track"))
                             trackHashSpan = reader.ValueSpan;
                         else if (equals(bytes, "reason"))
-                            endReason = (TrackEndReason) reader.ValueSpan[0];
+                            endReason = (TrackEndReason)reader.ValueSpan[0];
                         else if (equals(bytes, "error"))
                             errorSpan = reader.ValueSpan;
                         else if (equals(bytes, "thresholdMs"))
@@ -301,7 +349,7 @@ namespace Pahoe
 
                 if (equals(type, "WebSocketClosedEvent"))
                 {
-                    // TODO
+                    //What the fuck?
                 }
                 else if (Players.TryGetValue(guildId, out LavalinkPlayer player))
                 {

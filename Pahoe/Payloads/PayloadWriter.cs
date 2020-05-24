@@ -12,12 +12,19 @@ namespace Pahoe.Payloads
         public readonly Utf8JsonWriter Writer;
 
         private readonly LavalinkPlayer _player;
+        private readonly ClientWebSocket _webSocket;
         private readonly byte[] _buffer;
         private readonly MemoryStream _stream;
 
-        internal PayloadWriter(LavalinkPlayer player, int bufferSize = 1024)
+        internal PayloadWriter(LavalinkPlayer player, int bufferSize = 1024) : this(player.Client.WebSocket, bufferSize)
         {
             _player = player;
+        }
+
+        internal PayloadWriter(ClientWebSocket webSocket, int bufferSize = 1024)
+        {
+            _player = null;
+            _webSocket = webSocket;
             _buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
             _stream = new MemoryStream(_buffer, 0, bufferSize);
             Writer = new Utf8JsonWriter(_stream);
@@ -27,14 +34,20 @@ namespace Pahoe.Payloads
         {
             Writer.WriteStartObject();
             Writer.WriteString("op", op);
-            Writer.WriteString("guildId", _player.GuildIdStr);
+
+            if (_player != null)
+                Writer.WriteString("guildId", _player.GuildIdStr);
         }
 
         internal ValueTask SendAsync()
         {
             Writer.WriteEndObject();
             Writer.Flush();
-            return _player.Client.WebSocket.SendAsync(_buffer.AsMemory().Slice(0, (int) Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
+
+            if (_webSocket.State == WebSocketState.Open)
+                return _webSocket.SendAsync(_buffer.AsMemory().Slice(0, (int)Writer.BytesCommitted), WebSocketMessageType.Text, true, default);
+
+            return default;
         }
 
         public void Dispose()
