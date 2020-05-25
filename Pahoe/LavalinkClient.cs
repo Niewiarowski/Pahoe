@@ -8,7 +8,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Discord.WebSocket;
+using Disqord;
+using Disqord.Events;
 using Pahoe.Payloads;
 using Pahoe.Search;
 
@@ -30,11 +31,11 @@ namespace Pahoe
 
         public bool IsReady { get; private set; }
 
-        public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> OnTrackEnded { get; set; }
+        public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> TrackEnded { get; set; }
 
         internal ClientWebSocket WebSocket { get; private set; }
 
-        internal readonly BaseSocketClient Discord;
+        internal readonly DiscordClientBase DiscordClient;
         internal readonly ConcurrentDictionary<ulong, LavalinkPlayer> Players = new ConcurrentDictionary<ulong, LavalinkPlayer>();
 
         private readonly string _connectionEndpoint;
@@ -42,9 +43,9 @@ namespace Pahoe
         private readonly HttpClient _http = new HttpClient();
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
 
-        private LavalinkClient(BaseSocketClient discordClient, LavalinkConfiguration configuration)
+        public LavalinkClient(DiscordClientBase client, LavalinkConfiguration configuration)
         {
-            Discord = discordClient;
+            DiscordClient = client;
 
             Address = configuration.Address;
             Port = configuration.Port;
@@ -56,18 +57,14 @@ namespace Pahoe
             _searchEndpoint = string.Format("http://{0}/loadtracks?identifier=", _connectionEndpoint);
         }
 
-        public LavalinkClient(DiscordSocketClient discordClient, LavalinkConfiguration configuration) : this(discordClient as BaseSocketClient, configuration) { }
-        public LavalinkClient(DiscordShardedClient discordShardedClient, LavalinkConfiguration configuration) : this(discordShardedClient as BaseSocketClient, configuration) { }
-
         public async Task StartAsync()
         {
-            if (Discord.CurrentUser == null)
+            if (DiscordClient.CurrentUser == null)
                 throw new InvalidOperationException("Discord client must be logged in and ready.");
-
 
             _http.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", Authorization);
 
-            Discord.VoiceServerUpdated += VoiceServerUpdatedAsync;
+            DiscordClient.VoiceServerUpdated += VoiceServerUpdatedAsync;
 
             await ConnectWebSocketAsync();
             _ = Task.Run(WebSocketReceiveAsync, _cts.Token);
@@ -80,7 +77,7 @@ namespace Pahoe
             await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default).ConfigureAwait(false);
             _cts.Cancel();
             _cts.Dispose();
-            Discord.VoiceServerUpdated -= VoiceServerUpdatedAsync;
+            DiscordClient.VoiceServerUpdated -= VoiceServerUpdatedAsync;
 
             foreach (var player in Players.Values)
                 await player.DisconnectAsync().ConfigureAwait(false);
@@ -89,20 +86,20 @@ namespace Pahoe
             _http.Dispose();
         }
 
-        public async ValueTask<LavalinkPlayer> ConnectAsync(SocketVoiceChannel voiceChannel)
+        public async ValueTask<LavalinkPlayer> ConnectAsync(CachedVoiceChannel channel)
         {
-            if (Players.TryGetValue(voiceChannel.Guild.Id, out var player))
+            if (Players.TryGetValue(channel.Guild.Id, out var player))
             {
-                if (voiceChannel.Id != player.VoiceChannel.Id)
-                    await voiceChannel.ConnectAsync(selfDeaf: SelfDeaf, external: true).ConfigureAwait(false);
+                if (channel.Id != player.Channel.Id)
+                    await DiscordClient.UpdateVoiceStateAsync(channel.Guild.Id, channel.Id, isDeafened: SelfDeaf).ConfigureAwait(false);
 
                 return player;
             }
 
-            player = new LavalinkPlayer(this, voiceChannel);
-            Players.TryAdd(voiceChannel.Guild.Id, player);
+            player = new LavalinkPlayer(this, channel);
+            Players.TryAdd(channel.Guild.Id, player);
 
-            await voiceChannel.ConnectAsync(selfDeaf: SelfDeaf, external: true).ConfigureAwait(false);
+            await DiscordClient.UpdateVoiceStateAsync(channel.Guild.Id, channel.Id, isDeafened: SelfDeaf).ConfigureAwait(false);
             return player;
         }
 
@@ -122,13 +119,13 @@ namespace Pahoe
             return SearchResult.FromStream(stream);
         }
 
-        private Task VoiceServerUpdatedAsync(SocketVoiceServer voiceServer)
+        private Task VoiceServerUpdatedAsync(VoiceServerUpdatedEventArgs e)
         {
             // Shouldn't ever be false.
-            if (!Players.TryGetValue(voiceServer.Guild.Id, out var player))
+            if (!Players.TryGetValue(e.Guild.Id, out var player))
                 return Task.CompletedTask;
 
-            return VoiceServerUpdated.SendAsync(player, voiceServer).AsTask();
+            return VoiceServerUpdated.SendAsync(player, e).AsTask();
         }
 
         private async Task ConnectWebSocketAsync()
@@ -137,7 +134,7 @@ namespace Pahoe
 
             var options = WebSocket.Options;
             options.SetRequestHeader("Authorization", Authorization);
-            options.SetRequestHeader("User-Id", Discord.CurrentUser.Id.ToString());
+            options.SetRequestHeader("User-Id", DiscordClient.CurrentUser.Id.ToString());
             options.SetRequestHeader("Num-Shards", Shards.ToString());
             options.SetRequestHeader("Resume-Key", ConfigureResume.ResumeKey);
 
@@ -171,7 +168,8 @@ namespace Pahoe
                         {
                             // Skip over unusually large message?
                             bytesRead = 0;
-                            while (!(await WebSocket.ReceiveAsync(buffer, _cts.Token).ConfigureAwait(false)).EndOfMessage) ;
+                            while (!(await WebSocket.ReceiveAsync(buffer, _cts.Token).ConfigureAwait(false)).EndOfMessage)
+                                ;
                         }
                     }
                     while (!result.EndOfMessage);
@@ -183,7 +181,7 @@ namespace Pahoe
                     var data = buffer.Slice(0, bytesRead);
                     await HandleIncomingMessageAsync(data.Span).ConfigureAwait(false);
                 }
-                catch (WebSocketException) 
+                catch (WebSocketException)
                 {
                     // Disconnected...
 
@@ -202,7 +200,7 @@ namespace Pahoe
                         catch { }
                     }
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
                     // Jesus christ we should log this!!!
                 }
@@ -212,15 +210,15 @@ namespace Pahoe
 
         private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
         {
-            if (OnTrackEnded == null)
+            if (TrackEnded == null)
                 return;
 
-            Delegate[] delegates = OnTrackEnded.GetInvocationList();
+            Delegate[] delegates = TrackEnded.GetInvocationList();
             for (int i = 0; i < delegates.Length; i++)
             {
                 try
                 {
-                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>)delegates[i])(player, track, reason).ConfigureAwait(false);
+                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -251,7 +249,7 @@ namespace Pahoe
             static bool equals(ReadOnlySpan<byte> bytes, ReadOnlySpan<char> str)
             {
                 for (int i = 0; i < bytes.Length; i++)
-                    if (bytes[i] != (byte)str[i])
+                    if (bytes[i] != (byte) str[i])
                         return false;
 
                 return true;
@@ -329,7 +327,7 @@ namespace Pahoe
                         if (equals(bytes, "track"))
                             trackHashSpan = reader.ValueSpan;
                         else if (equals(bytes, "reason"))
-                            endReason = (TrackEndReason)reader.ValueSpan[0];
+                            endReason = (TrackEndReason) reader.ValueSpan[0];
                         else if (equals(bytes, "error"))
                             errorSpan = reader.ValueSpan;
                         else if (equals(bytes, "thresholdMs"))

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Discord.WebSocket;
+using Disqord;
+using Disqord.Events;
 using Pahoe.Payloads;
 using Pahoe.Search;
 
@@ -8,7 +9,7 @@ namespace Pahoe
 {
     public sealed class LavalinkPlayer
     {
-        public SocketVoiceChannel VoiceChannel { get; private set; }
+        public CachedVoiceChannel Channel { get; private set; }
 
         public LavalinkTrack Track { get; private set; }
 
@@ -25,16 +26,16 @@ namespace Pahoe
         internal readonly string GuildIdStr;
         internal string SessionId;
 
-        internal LavalinkPlayer(LavalinkClient client, SocketVoiceChannel voiceChannel)
+        internal LavalinkPlayer(LavalinkClient client, CachedVoiceChannel channel)
         {
             Bands = new BandCollection(this);
 
             Client = client;
-            VoiceChannel = voiceChannel;
-            GuildId = voiceChannel.Guild.Id;
-            GuildIdStr = voiceChannel.Guild.Id.ToString();
+            Channel = channel;
+            GuildId = channel.Guild.Id;
+            GuildIdStr = channel.Guild.Id.ToString();
 
-            Client.Discord.UserVoiceStateUpdated += UserVoiceStateUpdated;
+            Client.DiscordClient.VoiceStateUpdated += VoiceStateUpdatedAsync;
         }
 
         public ValueTask PlayAsync(LavalinkTrack track, TimeSpan startTime = default, TimeSpan endTime = default, bool noReplace = false)
@@ -76,24 +77,24 @@ namespace Pahoe
 
         public async Task DisconnectAsync()
         {
-            Client.Discord.UserVoiceStateUpdated -= UserVoiceStateUpdated;
+            Client.DiscordClient.VoiceStateUpdated -= VoiceStateUpdatedAsync;
             Client.Players.TryRemove(GuildId, out _);
             State = PlayerState.Idle;
             await Destroy.SendAsync(this).ConfigureAwait(false);
 
-            if (VoiceChannel != null)
-                await VoiceChannel.DisconnectAsync().ConfigureAwait(false);
+            if (Channel != null)
+                await Channel.Client.UpdateVoiceStateAsync(Channel.Guild.Id, null).ConfigureAwait(false);
         }
 
-        private Task UserVoiceStateUpdated(SocketUser user, SocketVoiceState oldState, SocketVoiceState state)
+        private Task VoiceStateUpdatedAsync(VoiceStateUpdatedEventArgs e)
         {
-            if (Client.Discord.CurrentUser.Id == user.Id)
+            if (Client.DiscordClient.CurrentUser.Id == e.Member.Id)
             {
-                VoiceChannel = state.VoiceChannel;
-                SessionId = state.VoiceSessionId;
-
-                if (VoiceChannel == null)
+                if (e.NewVoiceState == null)
                     return DisconnectAsync();
+
+                Channel = Channel.Guild.GetVoiceChannel(e.NewVoiceState.ChannelId);
+                SessionId = e.NewVoiceState.SessionId;
             }
 
             return Task.CompletedTask;
