@@ -1,6 +1,6 @@
-﻿using System.Threading.Tasks;
-using Discord;
-using Discord.WebSocket;
+﻿using System;
+using System.Threading.Tasks;
+using Disqord;
 using Pahoe;
 using Pahoe.Search;
 
@@ -10,29 +10,21 @@ namespace PahoeTest
     {
         private static async Task Main(string[] args)
         {
-            LavalinkTrack track = LavalinkTrack.Decode("QAAAjwIAK1Rlc3RpbmcgaWYgU2hhcmtzIENhbiBTbWVsbCBhIERyb3Agb2YgQmxvb2QACk1hcmsgUm9iZXIAAAAAAA5EWAALdWdSYzVqeDgweWcAAQAraHR0cHM6Ly93d3cueW91dHViZS5jb20vd2F0Y2g/dj11Z1JjNWp4ODB5ZwAHeW91dHViZQAAAAAAAAAA");
-            DiscordSocketClient discord = new DiscordSocketClient();
-            await discord.LoginAsync(TokenType.Bot, "token");
-
-            LavalinkClient pahoe = new LavalinkClient(discord, new LavalinkConfiguration
+            using (var client = new DiscordClient(TokenType.Bot, Environment.GetEnvironmentVariable("NOT_QUAHU")))
             {
-                Authorization = "password"
-            });
+                var pahoe = new LavalinkClient(client, new LavalinkConfiguration());
+                client.Ready += async e =>
+                {
+                    await pahoe.StartAsync();
+                    var result = await pahoe.SearchYouTubeAsync("https://www.youtube.com/watch?v=XZDt-O6r7rM");
+                    var channel = client.GetChannel(412378943354568715) as CachedVoiceChannel;
+                    var player = await pahoe.ConnectAsync(channel);
+                    await player.SetVolumeAsync(10);
+                    await player.PlayAsync(result.Tracks[0]);
+                };
 
-            await discord.StartAsync();
-
-            discord.Ready += async () =>
-            {
-                await pahoe.StartAsync();
-                SearchResult result = await pahoe.SearchYouTubeAsync("kfchvCyHmsc");
-
-                SocketVoiceChannel vc = discord.GetChannel(416711632702537738) as SocketVoiceChannel;
-                LavalinkPlayer player = await pahoe.ConnectAsync(vc);
-                await player.PlayAsync(result.Tracks[0]);
-
-            };
-
-            await Task.Delay(-1);
+                await client.RunAsync();
+            }
         }
     }
 }
