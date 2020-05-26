@@ -21,6 +21,8 @@ namespace Pahoe
 
         public BandCollection Bands { get; }
 
+        public event Func<LavalinkTrack, TrackEndReason, Task> TrackEnded;
+
         internal readonly LavalinkClient Client;
         internal readonly ulong GuildId;
         internal readonly string GuildIdStr;
@@ -84,6 +86,25 @@ namespace Pahoe
 
             if (Channel != null)
                 await Channel.Client.UpdateVoiceStateAsync(Channel.Guild.Id, null).ConfigureAwait(false);
+        }
+
+        internal async Task TrackEndedAsync(LavalinkTrack track, TrackEndReason reason)
+        {
+            if (TrackEnded == null)
+                return;
+
+            Delegate[] delegates = TrackEnded.GetInvocationList();
+            for (int i = 0; i < delegates.Length; i++)
+            {
+                try
+                {
+                    await ((Func<LavalinkTrack, TrackEndReason, Task>) delegates[i])(track, reason).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Log...?
+                }
+            }
         }
 
         private Task VoiceStateUpdatedAsync(VoiceStateUpdatedEventArgs e)

@@ -31,8 +31,6 @@ namespace Pahoe
 
         public bool IsReady { get; private set; }
 
-        public Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task> TrackEnded { get; set; }
-
         internal ClientWebSocket WebSocket { get; private set; }
 
         internal readonly DiscordClientBase DiscordClient;
@@ -74,14 +72,14 @@ namespace Pahoe
 
         public async Task StopAsync()
         {
-            await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default).ConfigureAwait(false);
-            _cts.Cancel();
-            _cts.Dispose();
             DiscordClient.VoiceServerUpdated -= VoiceServerUpdatedAsync;
 
             foreach (var player in Players.Values)
                 await player.DisconnectAsync().ConfigureAwait(false);
 
+            await WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing...", default).ConfigureAwait(false);
+            _cts.Cancel();
+            _cts.Dispose();
             WebSocket.Dispose();
             _http.Dispose();
         }
@@ -172,7 +170,7 @@ namespace Pahoe
                                 ;
                         }
                     }
-                    while (!result.EndOfMessage);
+                    while (!result.EndOfMessage && !_cts.IsCancellationRequested);
 
                     if (result.MessageType == WebSocketMessageType.Close)
                         continue;
@@ -185,15 +183,12 @@ namespace Pahoe
                 {
                     // Disconnected...
 
-                    foreach (var player in Players.Values)
-                        await player.DisconnectAsync().ConfigureAwait(false);
-
                     while (!_cts.IsCancellationRequested)
                     {
                         try
                         {
                             // In desperate need of some logging
-                            await Task.Delay(250);
+                            await Task.Delay(5000);
                             await ConnectWebSocketAsync();
                             break;
                         }
@@ -206,25 +201,6 @@ namespace Pahoe
                 }
             }
 
-        }
-
-        private async Task TrackEndedAsync(LavalinkPlayer player, LavalinkTrack track, TrackEndReason reason)
-        {
-            if (TrackEnded == null)
-                return;
-
-            Delegate[] delegates = TrackEnded.GetInvocationList();
-            for (int i = 0; i < delegates.Length; i++)
-            {
-                try
-                {
-                    await ((Func<LavalinkPlayer, LavalinkTrack, TrackEndReason, Task>) delegates[i])(player, track, reason).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Log...?
-                }
-            }
         }
 
         private Task HandleIncomingMessageAsync(Span<byte> data)
@@ -353,7 +329,7 @@ namespace Pahoe
                 {
                     var track = LavalinkTrack.Decode(Encoding.UTF8.GetString(trackHashSpan));
                     if (equals(type, "TrackEndEvent"))
-                        return TrackEndedAsync(player, track, endReason);
+                        return player.TrackEndedAsync(track, endReason);
                 }
             }
 
