@@ -155,11 +155,7 @@ namespace Pahoe
                     {
                         result = await WebSocket.ReceiveAsync(buffer.Slice(bytesRead), _cts.Token).ConfigureAwait(false);
                         if (result.MessageType == WebSocketMessageType.Close)
-                        {
-                            // Do something...
-                            await ConnectWebSocketAsync();
-                            continue;
-                        }
+                            throw new WebSocketException();
 
                         bytesRead += result.Count;
                         if (bytesRead == buffer.Length)
