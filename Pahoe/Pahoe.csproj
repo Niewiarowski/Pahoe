@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Disqord" Version="1.0.0-nightly-00063" />
+    <PackageReference Include="Qommon" Version="1.0.1" />
     <PackageReference Include="System.Text.Json" Version="4.6.0-preview8.19405.3" />
   </ItemGroup>
 

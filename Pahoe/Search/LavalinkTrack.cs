@@ -46,5 +46,10 @@ namespace Pahoe.Search
                 Uri = reader.Read<bool>() ? reader.ReadString() : string.Empty
             };
         }
+
+        public override string ToString()
+        {
+            return Title;
+        }
     }
 }

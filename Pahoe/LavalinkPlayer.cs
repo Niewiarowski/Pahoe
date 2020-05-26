@@ -2,8 +2,10 @@
 using System.Threading.Tasks;
 using Disqord;
 using Disqord.Events;
+using Pahoe.Events;
 using Pahoe.Payloads;
 using Pahoe.Search;
+using Qommon.Events;
 
 namespace Pahoe
 {
@@ -21,7 +23,33 @@ namespace Pahoe
 
         public BandCollection Bands { get; }
 
-        public event Func<LavalinkTrack, TrackEndReason, Task> TrackEnded;
+        internal AsynchronousEvent<TrackStartedEventArgs> _trackStarted { get; } = new AsynchronousEvent<TrackStartedEventArgs>();
+        public event AsynchronousEventHandler<TrackStartedEventArgs> TrackStarted
+        {
+            add => _trackStarted.Hook(value);
+            remove => _trackStarted.Unhook(value);
+        }
+
+        internal AsynchronousEvent<TrackEndedEventArgs> _trackEnded { get; } = new AsynchronousEvent<TrackEndedEventArgs>();
+        public event AsynchronousEventHandler<TrackEndedEventArgs> TrackEnded
+        {
+            add => _trackEnded.Hook(value);
+            remove => _trackEnded.Unhook(value);
+        }
+
+        internal AsynchronousEvent<TrackExceptionEventArgs> _trackException { get; } = new AsynchronousEvent<TrackExceptionEventArgs>();
+        public event AsynchronousEventHandler<TrackExceptionEventArgs> TrackException
+        {
+            add => _trackException.Hook(value);
+            remove => _trackException.Unhook(value);
+        }
+
+        internal AsynchronousEvent<TrackStuckEventArgs> _trackStuck { get; } = new AsynchronousEvent<TrackStuckEventArgs>();
+        public event AsynchronousEventHandler<TrackStuckEventArgs> TrackStuck
+        {
+            add => _trackStuck.Hook(value);
+            remove => _trackStuck.Unhook(value);
+        }
 
         internal readonly LavalinkClient Client;
         internal readonly ulong GuildId;
@@ -66,7 +94,7 @@ namespace Pahoe
         }
 
         public ValueTask SeekAsync(TimeSpan position)
-            => Seek.SendAsync(this, (uint) position.TotalMilliseconds);
+            => Seek.SendAsync(this, (uint)position.TotalMilliseconds);
 
         public ValueTask SetVolumeAsync(ushort volume)
         {
@@ -88,24 +116,17 @@ namespace Pahoe
                 await Channel.Client.UpdateVoiceStateAsync(Channel.Guild.Id, null).ConfigureAwait(false);
         }
 
-        internal async Task TrackEndedAsync(LavalinkTrack track, TrackEndReason reason)
-        {
-            if (TrackEnded == null)
-                return;
+        internal Task TrackStartedAsync(LavalinkTrack track)
+            => _trackStarted.InvokeAsync(new TrackStartedEventArgs(track));
 
-            Delegate[] delegates = TrackEnded.GetInvocationList();
-            for (int i = 0; i < delegates.Length; i++)
-            {
-                try
-                {
-                    await ((Func<LavalinkTrack, TrackEndReason, Task>) delegates[i])(track, reason).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Log...?
-                }
-            }
-        }
+        internal Task TrackEndedAsync(LavalinkTrack track, TrackEndReason reason)
+            => _trackEnded.InvokeAsync(new TrackEndedEventArgs(track, reason));
+
+        internal Task TrackExceptionAsync(LavalinkTrack track, string error)
+            => _trackException.InvokeAsync(new TrackExceptionEventArgs(track, error));
+
+        internal Task TrackStuckAsync(LavalinkTrack track, TimeSpan position)
+            => _trackStuck.InvokeAsync(new TrackStuckEventArgs(track, position));
 
         private Task VoiceStateUpdatedAsync(VoiceStateUpdatedEventArgs e)
         {

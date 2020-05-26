@@ -328,8 +328,14 @@ namespace Pahoe
                 else if (Players.TryGetValue(guildId, out LavalinkPlayer player))
                 {
                     var track = LavalinkTrack.Decode(Encoding.UTF8.GetString(trackHashSpan));
-                    if (equals(type, "TrackEndEvent"))
+                    if (equals(type, "TrackStartEvent"))
+                        return player.TrackStartedAsync(track);
+                    else if (equals(type, "TrackEndEvent"))
                         return player.TrackEndedAsync(track, endReason);
+                    else if (equals(type, "TrackExceptionEvent"))
+                        return player.TrackExceptionAsync(track, Encoding.UTF8.GetString(errorSpan));
+                    else if (equals(type, "TrackStuckEvent"))
+                        return player.TrackStuckAsync(track, TimeSpan.FromMilliseconds((double)thresholdMs));
                 }
             }
 
